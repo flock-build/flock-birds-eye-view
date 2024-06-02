@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -19,7 +18,8 @@ func failOnError(err error, msg string) {
 		log.Panicf("%s: %s", msg, err)
 	}
 }
-func publishToRabbitMQ(message string) {
+
+func publishToRabbitMQ(res []byte) {
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
@@ -40,7 +40,6 @@ func publishToRabbitMQ(message string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	body := message
 	err = ch.PublishWithContext(ctx,
 		"",     // exchange
 		q.Name, // routing key
@@ -48,10 +47,10 @@ func publishToRabbitMQ(message string) {
 		false,  // immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
-			Body:        []byte(body),
+			Body:        []byte(res),
 		})
 	failOnError(err, "Failed to publish a message")
-	log.Printf(" [x] Sent %s\n", body)
+	log.Printf(" [x] Sent %s\n", res)
 }
 
 func callOpenAICompletions(c *gin.Context) {
@@ -61,7 +60,7 @@ func callOpenAICompletions(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "FLOCK-AUTH header is missing"})
 		return
 	}
-	fmt.Println("Received FlOCK-AUTH:", flockApiKey) // Print FLOCK-AUTH value to console
+	fmt.Println("Received FLOCK-AUTH:", flockApiKey) // Print FLOCK-AUTH value to console
 
 	// Read raw request
 	reqBody, err := io.ReadAll(c.Request.Body)
@@ -101,15 +100,9 @@ func callOpenAICompletions(c *gin.Context) {
 		return
 	}
 
-	var openAIResp map[string]interface{}
-	if err := json.Unmarshal(body, &openAIResp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	publishToRabbitMQ(body)
 
-	publishToRabbitMQ("rama was here")
-
-	c.JSON(http.StatusOK, openAIResp)
+	c.Data(http.StatusOK, "application/json", body)
 }
 
 func main() {

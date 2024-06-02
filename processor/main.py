@@ -1,8 +1,19 @@
 #!/usr/bin/env python
+import json
 import os
 import sys
 
 import pika
+
+
+def callback(ch, method, properties, body):
+    try:
+        message = json.loads(body)
+        data = json.dumps(message, indent=4)
+        print(f" [x] Received {data}")
+    except json.JSONDecodeError as e:
+        print(f" [x] Failed to decode JSON: {e}")
+        print(f"     Received raw body: {body}")
 
 
 def main():
@@ -10,9 +21,6 @@ def main():
     channel = connection.channel()
 
     channel.queue_declare(queue="flock-processor")
-
-    def callback(ch, method, properties, body):
-        print(f" [x] Received {body}")
 
     channel.basic_consume(
         queue="flock-processor", on_message_callback=callback, auto_ack=True
