@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -10,16 +11,24 @@ import (
 )
 
 func callOpenAICompletions(c *gin.Context) {
-	// Read the raw JSON body from the request
+	// Authenticate with Flock
+	flockApiKey := c.GetHeader("FLOCK-AUTH")
+	if flockApiKey == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "FLOCK-AUTH header is missing"})
+		return
+	}
+	fmt.Println("Received FlOCK-AUTH:", flockApiKey) // Print FLOCK-AUTH value to console
+
+	// Read raw request
 	reqBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get the Authorization header from the incoming request
-	apiKey := c.GetHeader("Authorization")
-	if apiKey == "" {
+	// Forward request to OpenAI
+	openaiApiKey := c.GetHeader("Authorization")
+	if openaiApiKey == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is missing"})
 		return
 	}
@@ -32,7 +41,7 @@ func callOpenAICompletions(c *gin.Context) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", apiKey)
+	req.Header.Set("Authorization", openaiApiKey)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
