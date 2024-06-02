@@ -9,4 +9,4 @@
 1. Clone the repository
 2. Run [RabbitMQ on Docker](https://www.rabbitmq.com/docs/download)
 3. Run proxy
-4. Run analyzer
+4. Run processor
