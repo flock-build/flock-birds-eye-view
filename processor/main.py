@@ -8,8 +8,7 @@ import pika
 
 def callback(ch, method, properties, body):
     try:
-        message = json.loads(body)
-        data = json.dumps(message, indent=4)
+        data = json.loads(body)
         print(f" [x] Received {data}")
     except json.JSONDecodeError as e:
         print(f" [x] Failed to decode JSON: {e}")
