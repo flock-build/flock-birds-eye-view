@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -46,8 +47,7 @@ func publishToRabbitMQ(res []byte) {
 		false,  // mandatory
 		false,  // immediate
 		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(res),
+			Body: []byte(res),
 		})
 	failOnError(err, "Failed to publish a message")
 	log.Printf(" [x] Sent %s\n", res)
@@ -78,7 +78,9 @@ func callOpenAICompletions(c *gin.Context) {
 
 	url := "https://api.openai.com/v1/completions"
 
+	startTime := time.Now()
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	endTime := time.Now()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -100,7 +102,22 @@ func callOpenAICompletions(c *gin.Context) {
 		return
 	}
 
-	publishToRabbitMQ(body)
+	var res map[string]interface{}
+	if err := json.Unmarshal(body, &res); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	res["flock_metrics"] = map[string]interface{}{
+		"response_time": endTime.Sub(startTime).Microseconds(),
+	}
+
+	data, err := json.Marshal(res)
+	if err != nil {
+		log.Fatalf("Error serializing map to JSON: %v", err)
+	}
+
+	publishToRabbitMQ(data)
 
 	c.Data(http.StatusOK, "application/json", body)
 }
