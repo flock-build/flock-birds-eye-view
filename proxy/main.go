@@ -20,7 +20,18 @@ func failOnError(err error, msg string) {
 	}
 }
 
-func publishToRabbitMQ(res []byte) {
+func publishToRabbitMQ(body []byte, startTime time.Time, endTime time.Time) {
+	var payload map[string]interface{}
+	err := json.Unmarshal(body, &payload)
+	failOnError(err, "Error on unmarshal byte array to map")
+
+	payload["flock_metrics"] = map[string]interface{}{
+		"response_time": endTime.Sub(startTime).Microseconds(),
+	}
+
+	payloadJson, err := json.Marshal(payload)
+	failOnError(err, "Error on marshal map to byte array")
+
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
@@ -47,10 +58,10 @@ func publishToRabbitMQ(res []byte) {
 		false,  // mandatory
 		false,  // immediate
 		amqp.Publishing{
-			Body: []byte(res),
+			Body: []byte(payloadJson),
 		})
 	failOnError(err, "Failed to publish a message")
-	log.Printf(" [x] Sent %s\n", res)
+	log.Printf(" [x] Sent %s\n", payloadJson)
 }
 
 func callOpenAICompletions(c *gin.Context) {
@@ -78,9 +89,7 @@ func callOpenAICompletions(c *gin.Context) {
 
 	url := "https://api.openai.com/v1/completions"
 
-	startTime := time.Now()
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
-	endTime := time.Now()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -89,7 +98,9 @@ func callOpenAICompletions(c *gin.Context) {
 	req.Header.Set("Authorization", openaiApiKey)
 
 	client := &http.Client{}
+	startTime := time.Now()
 	resp, err := client.Do(req)
+	endTime := time.Now()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -102,22 +113,7 @@ func callOpenAICompletions(c *gin.Context) {
 		return
 	}
 
-	var res map[string]interface{}
-	if err := json.Unmarshal(body, &res); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	res["flock_metrics"] = map[string]interface{}{
-		"response_time": endTime.Sub(startTime).Microseconds(),
-	}
-
-	data, err := json.Marshal(res)
-	if err != nil {
-		log.Fatalf("Error serializing map to JSON: %v", err)
-	}
-
-	publishToRabbitMQ(data)
+	go publishToRabbitMQ(body, startTime, endTime)
 
 	c.Data(http.StatusOK, "application/json", body)
 }
